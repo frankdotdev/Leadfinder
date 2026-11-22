@@ -178,13 +178,22 @@ function render() {
       ? `<a href="${esc(r.maps_url)}" target="_blank" rel="noopener" class="map-inline-link">${ICONS.mapPin} Maps</a>`
       : "";
 
-    // Phone & 1-Click WhatsApp Pitch
+    // Phone & 1-Click WhatsApp Pitch + Baileys Verification Badge
     const waPitchHref = buildWhatsAppPitchHref(r);
+    const waVerBadge = r.wa_verified === true
+      ? `<span class="conf-badge conf-verified" title="Verified registered on WhatsApp via Baileys">WA ✓</span>`
+      : (r.wa_verified === false ? `<span class="conf-badge conf-inferred" title="Not registered on WhatsApp (landline)">No WA</span>` : "");
+    const waSentBadge = r.wa_status === "sent"
+      ? `<span class="email-badge sent">WA Sent ✓</span>`
+      : "";
+    const waBotBtn = (r.phone && r.wa_verified !== false)
+      ? `<button type="button" class="btn-mini btn-wa" data-action="send-wa-bot" data-id="${esc(r.id)}" title="Send via Baileys WhatsApp Bot (with human typing simulation)">${ICONS.whatsapp} ${r.wa_status === "sent" ? "Sent ✓" : "Send WA Bot"}</button>`
+      : "";
     const waBadge = waPitchHref
-      ? `<a href="${esc(waPitchHref)}" target="_blank" rel="noopener" class="badge-wa" title="Open WhatsApp with tailored pitch pre-filled">${ICONS.whatsapp} WhatsApp Pitch</a>`
+      ? `<a href="${esc(waPitchHref)}" target="_blank" rel="noopener" class="badge-wa" title="Open WhatsApp Web/Desktop with pitch pre-filled">${ICONS.whatsapp} wa.me</a>`
       : "";
     const phoneHtml = r.phone
-      ? `<div class="contact-line"><a href="tel:${esc(r.phone)}" class="contact-item">${ICONS.phone} ${esc(r.phone)}</a>${waBadge}</div>`
+      ? `<div class="contact-line"><a href="tel:${esc(r.phone)}" class="contact-item">${ICONS.phone} ${esc(r.phone)}</a>${waVerBadge}${waSentBadge}${waBadge}${waBotBtn}</div>`
       : "";
 
     // Social Links
@@ -206,11 +215,21 @@ function render() {
       const allMails = r.email.split(",").map(m => m.trim()).filter(Boolean);
       const primary = allMails[0];
       const secondary = allMails.slice(1);
+      const confBadge = r.email_confidence === "domain_inferred"
+        ? `<span class="conf-badge conf-inferred" title="${esc(r.email_source || 'MX-Verified Domain Guess')}">Inferred MX</span>`
+        : `<span class="conf-badge conf-verified" title="Source: ${esc(r.email_source || 'Verified')}">Verified ✓</span>`;
+
       let statusBadge = "";
       if (r.email_status === "sent") {
         statusBadge = `<span class="email-badge sent" title="${esc(r.email_status_note)}">✓ Sent</span>`;
       } else if (r.email_status === "simulated") {
         statusBadge = `<span class="email-badge simulated" title="${esc(r.email_status_note)}">✓ Dry-Run Sent</span>`;
+      } else if (r.email_status === "replied") {
+        statusBadge = `<span class="email-badge sent" title="${esc(r.email_status_note)}">🎉 Replied</span>`;
+      } else if (r.email_status === "bounced") {
+        statusBadge = `<span class="email-badge err" title="${esc(r.email_status_note)}">⚠ Bounced</span>`;
+      } else if (r.email_status === "inferred_hold") {
+        statusBadge = `<span class="email-badge already" title="${esc(r.email_status_note)}">Held (Inferred)</span>`;
       } else if (r.email_status === "already_sent") {
         statusBadge = `<span class="email-badge already" title="${esc(r.email_status_note)}">Previously Sent</span>`;
       } else if (r.email_status === "error") {
@@ -218,7 +237,8 @@ function render() {
       }
       emailHtml = `<div class="email-block">
         <a href="${esc(buildMailtoHref(r))}" class="email-link" title="Open in mail client">${ICONS.mail} ${esc(primary)}</a>
-        ${statusBadge}
+        ${confBadge} ${statusBadge}
+        ${r.email_source ? `<span class="site-note">Source: ${esc(r.email_source)}</span>` : ""}
         ${secondary.length > 0 ? `<span class="email-secondary">+${secondary.length} more: ${esc(secondary.join(", "))}</span>` : ""}
       </div>`;
     }
@@ -230,6 +250,9 @@ function render() {
       ? `<a href="${esc(r.website)}" target="_blank" rel="noopener" class="site-link" title="${esc(r.website)}">${esc(cleanUrl.slice(0, 30))}${cleanUrl.length > 30 ? "…" : ""} ${ICONS.external}</a>`
       : "";
     const siteNoteHtml = r.site_note ? `<span class="site-note">${esc(r.site_note)}</span>` : "";
+    const evidenceHtml = r.evidence_quote
+      ? `<div class="site-note" style="margin-top:4px; color:var(--ink-secondary);"><strong>${esc(r.evidence_pain || "Evidence")}:</strong> "${esc(r.evidence_quote)}"</div>`
+      : "";
 
     const auditPills = (r.audit_issues || []).map(iss => `<span class="audit-pill">${esc(iss)}</span>`).join("");
 
@@ -267,6 +290,8 @@ function render() {
         ${r.address ? `<span class="biz-meta">${esc(r.address)}</span>` : ""}
         <div class="biz-tags-row">
           ${r.category ? `<span class="category-tag">${esc(r.category)}</span>` : ""}
+          ${r.tech_stack ? `<span class="category-tag" title="Detected CMS / Platform">${esc(r.tech_stack)}</span>` : ""}
+          ${r.owner_name ? `<span class="category-tag" title="Extracted Decision-Maker">👤 ${esc(r.owner_name)}</span>` : ""}
           ${ratingHtml}
           ${mapHtml}
         </div>
@@ -280,6 +305,7 @@ function render() {
         <div class="site-wrap">
           <div class="site-top-line">${statusTag} ${siteUrlHtml}</div>
           ${siteNoteHtml}
+          ${evidenceHtml}
           ${auditPills ? `<div class="audit-pills-wrap">${auditPills}</div>` : ""}
         </div>
       </td>
@@ -375,8 +401,50 @@ $("#rows").onclick = async e => {
     }
   } else if (action === "send-smtp") {
     await sendLeadEmailViaSmtp(lead, actionEl);
+  } else if (action === "send-wa-bot") {
+    await sendLeadWhatsAppViaBot(lead, actionEl);
   }
 };
+
+async function sendLeadWhatsAppViaBot(lead, btnEl) {
+  if (!lead.phone) return;
+  const orig = btnEl.innerHTML;
+  btnEl.disabled = true;
+  btnEl.textContent = "Typing...";
+  try {
+    const res = await fetch("/api/wa/send", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        phone: lead.phone,
+        message: lead.outreach_dm || lead.outreach_body,
+        name: lead.name,
+        force: true,
+        throttle: false
+      })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      lead.wa_status = "sent";
+      lead.wa_verified = true;
+      contacted[lead.id] = true;
+      localStorage.setItem("contacted", JSON.stringify(contacted));
+      showToast(`✓ ${data.message}`);
+      render();
+    } else {
+      if (data.status === "not_on_whatsapp") lead.wa_verified = false;
+      showToast(data.message || data.error || "WhatsApp send failed");
+      if (String(data.error || "").includes("not connected") || String(data.error || "").includes("offline")) {
+        openWaModal();
+      }
+      render();
+    }
+  } catch (err) {
+    showToast("WA Bot error: " + err.message);
+    btnEl.disabled = false;
+    btnEl.innerHTML = orig;
+  }
+}
 
 async function sendLeadEmailViaSmtp(lead, btnEl = null) {
   if (!lead.email) {
@@ -397,7 +465,13 @@ async function sendLeadEmailViaSmtp(lead, btnEl = null) {
         subject: lead.outreach_subject,
         body: lead.outreach_body,
         name: lead.name,
-        force: true
+        force: true,
+        meta: {
+          category: lead.category || "",
+          city: lead.city || "",
+          site_status: lead.site_status || "",
+          audit_issues: lead.audit_issues || []
+        }
       })
     });
     const data = await res.json();
@@ -586,8 +660,22 @@ function openSettingsModal() {
   $("#s_smtp_password").value = s.smtp_password || "";
   $("#s_smtp_host").value = s.smtp_host || "smtp.gmail.com";
   $("#s_smtp_port").value = s.smtp_port || 465;
+  $("#s_imap_host").value = s.imap_host || "imap.gmail.com";
+  $("#s_imap_port").value = s.imap_port || 993;
+  $("#s_send_delay_sec").value = s.send_delay_sec ?? 8;
+  $("#s_daily_send_limit").value = s.daily_send_limit ?? 40;
+  $("#s_followup_1_days").value = s.followup_1_days ?? 3;
+  $("#s_followup_2_days").value = s.followup_2_days ?? 7;
   $("#s_auto_send_email").checked = Boolean(s.auto_send_email);
+  $("#s_auto_send_inferred").checked = Boolean(s.auto_send_inferred);
+  $("#s_business_hours_only").checked = Boolean(s.business_hours_only);
+  $("#s_include_unsubscribe").checked = s.include_unsubscribe !== false;
   $("#s_dry_run").checked = Boolean(s.dry_run);
+  $("#s_serper_api_key").value = s.serper_api_key || "";
+  $("#s_tavily_api_key").value = s.tavily_api_key || "";
+  $("#s_brave_api_key").value = s.brave_api_key || "";
+  $("#s_exa_api_key").value = s.exa_api_key || "";
+  $("#s_searxng_url").value = s.searxng_url || "";
   $("#s_hunter_api_key").value = s.hunter_api_key || "";
   $("#s_gemini_api_key").value = s.gemini_api_key || "";
   $("#s_groq_api_key").value = s.groq_api_key || "";
@@ -607,8 +695,22 @@ function collectSettingsForm() {
     smtp_password: $("#s_smtp_password").value.trim(),
     smtp_host: $("#s_smtp_host").value.trim() || "smtp.gmail.com",
     smtp_port: parseInt($("#s_smtp_port").value, 10) || 465,
+    imap_host: $("#s_imap_host").value.trim() || "imap.gmail.com",
+    imap_port: parseInt($("#s_imap_port").value, 10) || 993,
+    send_delay_sec: parseInt($("#s_send_delay_sec").value, 10) || 8,
+    daily_send_limit: parseInt($("#s_daily_send_limit").value, 10) || 40,
+    followup_1_days: parseInt($("#s_followup_1_days").value, 10) || 3,
+    followup_2_days: parseInt($("#s_followup_2_days").value, 10) || 7,
     auto_send_email: $("#s_auto_send_email").checked,
+    auto_send_inferred: $("#s_auto_send_inferred").checked,
+    business_hours_only: $("#s_business_hours_only").checked,
+    include_unsubscribe: $("#s_include_unsubscribe").checked,
     dry_run: $("#s_dry_run").checked,
+    serper_api_key: $("#s_serper_api_key").value.trim(),
+    tavily_api_key: $("#s_tavily_api_key").value.trim(),
+    brave_api_key: $("#s_brave_api_key").value.trim(),
+    exa_api_key: $("#s_exa_api_key").value.trim(),
+    searxng_url: $("#s_searxng_url").value.trim(),
     hunter_api_key: $("#s_hunter_api_key").value.trim(),
     gemini_api_key: $("#s_gemini_api_key").value.trim(),
     groq_api_key: $("#s_groq_api_key").value.trim()
@@ -658,10 +760,162 @@ $("#testSmtpBtn").onclick = async () => {
   }
 };
 
+// Live Trace Logs Helpers
+let jobLogs = [];
+
+function appendJobLogs(newLogs) {
+  if (!newLogs || newLogs.length === 0) return;
+  jobLogs.push(...newLogs);
+  $("#logCount").textContent = String(jobLogs.length);
+  const body = $("#logBody");
+  const frag = document.createDocumentFragment();
+  for (const item of newLogs) {
+    const div = document.createElement("div");
+    div.className = "log-line";
+    div.innerHTML = `<span class="log-ts">[${esc(item.ts)}]</span><span class="log-lvl-${esc(item.level)}">[${esc(item.level)}]</span><span>${esc(item.msg)}</span>`;
+    frag.appendChild(div);
+  }
+  body.appendChild(frag);
+  if (!body.hidden) {
+    body.scrollTop = body.scrollHeight;
+  }
+}
+
+$("#toggleLogBtn").onclick = e => {
+  if (e.target.closest("button")) return;
+  const body = $("#logBody");
+  body.hidden = !body.hidden;
+  $("#logChevron").textContent = body.hidden ? "▼" : "▲";
+  if (!body.hidden) body.scrollTop = body.scrollHeight;
+};
+
+$("#copyLogsBtn").onclick = () => {
+  const txt = jobLogs.map(l => `[${l.ts}] [${l.level}] ${l.msg}`).join("\n");
+  copyText(txt || "No logs yet.", "Copied diagnostic logs!");
+};
+
+$("#clearLogsBtn").onclick = () => {
+  jobLogs = [];
+  $("#logBody").innerHTML = "";
+  $("#logCount").textContent = "0";
+};
+
+// Outreach CRM & Follow-Ups Modal Logic
+async function loadCrmModal() {
+  $("#crmModal").hidden = false;
+  $("#crmSummary").textContent = "Loading outreach ledger...";
+  try {
+    const data = await (await fetch("/api/crm")).json();
+    const leads = data.leads || [];
+    const dueCount = leads.filter(l => l.followup_due).length;
+    const repliedCount = leads.filter(l => l.status === "replied").length;
+    const bouncedCount = leads.filter(l => l.status === "bounced").length;
+    $("#crmSummary").textContent = `${leads.length} tracked • ${dueCount} follow-up(s) due • ${repliedCount} replied • ${bouncedCount} bounced • Sent today: ${data.sent_today}/${data.daily_limit}`;
+
+    if (leads.length === 0) {
+      $("#crmRows").innerHTML = `<tr><td colspan="4" style="text-align:center; padding: 28px; color: var(--mute);">No outreach emails tracked yet.</td></tr>`;
+      return;
+    }
+
+    $("#crmRows").innerHTML = leads.map(l => {
+      const badgeCls = l.status === "replied" ? "replied" : (l.status === "bounced" ? "bounced" : (l.followup_due ? "hold" : ""));
+      const statusLabel = l.status === "replied" ? "🎉 Replied" : (l.status === "bounced" ? "⚠ Bounced" : (l.status === "opted_out" ? "Opted Out" : (l.followup_due ? "⏰ Follow-Up Due" : l.status)));
+      return `<tr>
+        <td>
+          <strong>${esc(l.biz_name)}</strong><br>
+          <span class="site-note">${esc(l.email)}</span>
+          ${l.reply_snippet ? `<div class="site-note" style="color:var(--ok-text); margin-top:4px;">"${esc(l.reply_snippet)}"</div>` : ""}
+          ${l.bounce_reason ? `<div class="site-note" style="color:var(--bad-text); margin-top:4px;">${esc(l.bounce_reason)}</div>` : ""}
+        </td>
+        <td>
+          <span class="category-tag">Stage ${l.stage}/3</span>
+          <span class="sent-badge ${badgeCls}">${esc(statusLabel)}</span>
+        </td>
+        <td>
+          <div class="site-note">Sent: ${esc(l.sent_at)}</div>
+          ${l.next_followup_at ? `<div class="site-note">Next: ${esc(l.next_followup_at)}</div>` : ""}
+        </td>
+        <td>
+          <div style="display:flex; gap:6px; flex-wrap:wrap;">
+            ${l.status !== "replied" && l.status !== "bounced" && l.status !== "opted_out" && l.stage < 3
+              ? `<button type="button" class="btn-mini btn-send-smtp" data-crm-followup="${esc(l.email)}">Send Follow-Up</button>`
+              : ""}
+            ${l.status !== "opted_out"
+              ? `<button type="button" class="btn-mini btn-ghost" data-crm-optout="${esc(l.email)}">Opt-Out</button>`
+              : ""}
+          </div>
+        </td>
+      </tr>`;
+    }).join("");
+  } catch (err) {
+    $("#crmSummary").textContent = "Failed to load CRM: " + err.message;
+  }
+}
+
+$("#openCrmBtn").onclick = loadCrmModal;
+$("#closeCrmModal").onclick = () => { $("#crmModal").hidden = true; };
+
+$("#syncImapBtn").onclick = async () => {
+  const btn = $("#syncImapBtn");
+  btn.disabled = true;
+  btn.textContent = "Syncing IMAP...";
+  try {
+    const res = await fetch("/api/crm/sync-imap", {method: "POST", headers: {"Content-Type": "application/json"}, body: "{}"});
+    const data = await res.json();
+    showToast(data.message || "IMAP sync complete");
+    await loadCrmModal();
+  } catch (err) {
+    showToast("IMAP sync error: " + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Check Replies & Bounces (IMAP)";
+  }
+};
+
+$("#sendDueFollowupsBtn").onclick = async () => {
+  const btn = $("#sendDueFollowupsBtn");
+  btn.disabled = true;
+  btn.textContent = "Sending Due...";
+  try {
+    const res = await fetch("/api/crm/send-followups", {method: "POST", headers: {"Content-Type": "application/json"}, body: "{}"});
+    const data = await res.json();
+    showToast(data.message || "Done");
+    await loadCrmModal();
+  } catch (err) {
+    showToast("Follow-up error: " + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Send Due Follow-Ups";
+  }
+};
+
+$("#crmRows").onclick = async e => {
+  const fuBtn = e.target.closest("[data-crm-followup]");
+  if (fuBtn) {
+    const em = fuBtn.dataset.crmFollowup;
+    fuBtn.disabled = true;
+    fuBtn.textContent = "Sending...";
+    const res = await fetch("/api/crm/send-followups", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({email: em})});
+    const data = await res.json();
+    showToast(data.message || "Follow-up sent");
+    await loadCrmModal();
+    return;
+  }
+  const optBtn = e.target.closest("[data-crm-optout]");
+  if (optBtn) {
+    const em = optBtn.dataset.crmOptout;
+    await fetch("/api/crm/status", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({email: em, status: "opted_out"})});
+    showToast(`Marked ${em} as opted out`);
+    await loadCrmModal();
+  }
+};
+
 // Close modals on backdrop click
 window.onclick = e => {
   if (e.target === $("#pitchModal")) $("#pitchModal").hidden = true;
   if (e.target === $("#settingsModal")) $("#settingsModal").hidden = true;
+  if (e.target === $("#crmModal")) $("#crmModal").hidden = true;
+  if (e.target === $("#waModal")) closeWaModal();
 };
 
 // Search Form Submission
@@ -669,6 +923,9 @@ $("#f").onsubmit = async e => {
   e.preventDefault();
   clearInterval(timer);
   rows = [];
+  jobLogs = [];
+  $("#logBody").innerHTML = "";
+  $("#logCount").textContent = "0";
   render();
   $("#go").disabled = true;
   $("#status").textContent = "Initializing search & deep contact hunter...";
@@ -691,7 +948,10 @@ $("#f").onsubmit = async e => {
 
     timer = setInterval(async () => {
       try {
-        const j = await (await fetch(`/api/job/${id}?since=${rows.length}`)).json();
+        const j = await (await fetch(`/api/job/${id}?since=${rows.length}&log_since=${jobLogs.length}`)).json();
+        if (j.logs && j.logs.length > 0) {
+          appendJobLogs(j.logs);
+        }
         if (j.results && j.results.length > 0) {
           rows.push(...j.results);
           render();
@@ -743,3 +1003,94 @@ $("#csv").onclick = () => {
   link.download = `leads-${tab}-${new Date().toISOString().slice(0, 10)}.csv`;
   link.click();
 };
+
+
+// WhatsApp Baileys Sidecar Modal Logic
+let waPollTimer = null;
+
+async function refreshWaStatus() {
+  try {
+    const st = await (await fetch("/api/wa/status")).json();
+    const label = $("#waBtnLabel");
+    if (st.connected) {
+      label.textContent = `WA: Connected (${st.phone || "OK"})`;
+      $("#waConnStatus").textContent = `Connected as ${st.name || "WhatsApp"} (${st.phone}) • Sent today: ${st.sent_today ?? 0}/${st.daily_limit ?? 15}`;
+      $("#waConnStatus").style.color = "var(--ok-text)";
+      $("#waQrImg").hidden = true;
+    } else if (st.state === "qr" && st.qr_data_url) {
+      label.textContent = "WA: Scan QR";
+      $("#waConnStatus").textContent = "Scan this QR code in WhatsApp → Linked Devices:";
+      $("#waConnStatus").style.color = "var(--ink)";
+      $("#waQrImg").src = st.qr_data_url;
+      $("#waQrImg").hidden = false;
+    } else if (st.state === "offline") {
+      label.textContent = "WhatsApp Bot";
+      $("#waConnStatus").textContent = st.error || "Sidecar offline. Run wa_sidecar\\start_wa.bat first.";
+      $("#waConnStatus").style.color = "var(--bad-text)";
+      $("#waQrImg").hidden = true;
+    } else {
+      label.textContent = `WA: ${st.state || "Disconnected"}`;
+      $("#waConnStatus").textContent = st.error || `Status: ${st.state || "Disconnected"}. Click Connect to generate QR.`;
+      $("#waConnStatus").style.color = "var(--mute)";
+      $("#waQrImg").hidden = true;
+    }
+  } catch {}
+}
+
+function openWaModal() {
+  const s = currentSettings;
+  $("#s_wa_daily_limit").value = s.wa_daily_limit ?? 15;
+  $("#s_wa_delay_min_sec").value = s.wa_delay_min_sec ?? 90;
+  $("#s_wa_delay_max_sec").value = s.wa_delay_max_sec ?? 210;
+  $("#s_wa_business_hours_only").checked = s.wa_business_hours_only !== false;
+  $("#s_wa_auto_send").checked = Boolean(s.wa_auto_send);
+  $("#waModal").hidden = false;
+  refreshWaStatus();
+  clearInterval(waPollTimer);
+  waPollTimer = setInterval(refreshWaStatus, 2500);
+}
+
+function closeWaModal() {
+  $("#waModal").hidden = true;
+  clearInterval(waPollTimer);
+}
+
+$("#openWaBtn").onclick = openWaModal;
+$("#closeWaModal").onclick = closeWaModal;
+
+$("#waConnectBtn").onclick = async () => {
+  await fetch("/api/wa/connect", {method: "POST", headers: {"Content-Type": "application/json"}, body: "{}"});
+  showToast("Starting WhatsApp connection... waiting for QR.");
+  setTimeout(refreshWaStatus, 1000);
+};
+
+$("#waLogoutBtn").onclick = async () => {
+  await fetch("/api/wa/logout", {method: "POST", headers: {"Content-Type": "application/json"}, body: "{}"});
+  showToast("Disconnected WhatsApp session.");
+  refreshWaStatus();
+};
+
+$("#waSyncRepliesBtn").onclick = async () => {
+  const res = await (await fetch("/api/wa/sync-replies", {method: "POST", headers: {"Content-Type": "application/json"}, body: "{}"})).json();
+  showToast(res.message || res.error || "Synced WA replies");
+};
+
+$("#saveWaSettingsBtn").onclick = async () => {
+  const payload = {
+    wa_daily_limit: parseInt($("#s_wa_daily_limit").value, 10) || 15,
+    wa_delay_min_sec: parseInt($("#s_wa_delay_min_sec").value, 10) || 90,
+    wa_delay_max_sec: parseInt($("#s_wa_delay_max_sec").value, 10) || 210,
+    wa_business_hours_only: $("#s_wa_business_hours_only").checked,
+    wa_auto_send: $("#s_wa_auto_send").checked,
+  };
+  const res = await (await fetch("/api/settings", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(payload)
+  })).json();
+  currentSettings = res.settings || {...currentSettings, ...payload};
+  showToast("WhatsApp anti-ban settings saved!");
+};
+
+// Check WA sidecar status once on page load
+refreshWaStatus();

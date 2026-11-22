@@ -1,7 +1,7 @@
 # ⚡ LeadFinder
 
-> **High-accuracy autonomous local business lead generator, website audit engine, and instant cold outreach system for digital agencies, web developers, SEOs, and consultants.**  
-> Find businesses with **no website**, a **broken website**, or **only social media profiles**, perform live **conversion & SEO audits**, discover verified **emails & WhatsApp numbers**, and dispatch **hyper-tailored, human outreach writeups** with 1-click or automated SMTP.
+> **High-accuracy autonomous local business lead generator, evidence-based website audit engine, and compliant cold outreach CRM for digital agencies, web developers, SEOs, and consultants.**  
+> Find businesses with **no website**, a **broken website**, or **only social media profiles**, extract **verbatim operational evidence**, discover **MX-verified emails & WhatsApp numbers**, and run **anti-spam outreach & two-way IMAP follow-up sequences** with **zero external pip dependencies**.
 
 [![Python](https://img.shields.io/badge/Python-3.10+-3776AB?style=flat-square&logo=python&logoColor=white)](https://python.org)
 [![Dependencies: Zero](https://img.shields.io/badge/Dependencies-Zero%20(Pure%20Stdlib)-success?style=flat-square)](https://python.org)
@@ -13,63 +13,49 @@
 
 ## 💡 Why LeadFinder?
 
-Digital agencies, freelance web developers, and cold outreach specialists spend hours manually browsing Google Maps to find local businesses needing web design, redesigns, or marketing services. Commercial lead platforms charge **$100+/month**, gate results behind lead credits, and fail to diagnose technical website problems or write customized pitches.
+Digital agencies, freelance web developers, and cold outreach specialists spend hours manually browsing Google Maps to find local businesses needing web design, automation, or SEO. Commercial scrapers charge **$100+/month**, cap results behind credits, guess bouncing emails, and send generic templates.
 
-**LeadFinder is 100% free, open-source, and runs locally with ZERO pip dependencies.** It queries live global map databases, performs multi-tier website health & SEO audits, aggressively hunts verified contact emails, and drafts human-written, industry-specific pitches tailored to the exact problems diagnosed for that business.
+**LeadFinder is 100% free, open-source, and runs locally with ZERO pip dependencies.** It queries multi-provider map & search APIs, crawls live sites safely with SSRF protection, verifies email domains via DNS-over-HTTPS MX lookups, grounds pitches in verbatim website quotes without hallucination, and tracks replies/bounces via two-way IMAP sync.
 
 ---
 
-## ✨ Key Features
+## ✨ Key Capabilities
 
-### 🗺️ Resilient Multi-Tier Map & Geocoding Engine
-- **OpenStreetMap (Overpass API)**: 100% free, unmetered, and requires no API key or credit card.
-- **Smart Commercial Core Geocoding**: Automatically calibrates search bounding boxes ($\pm 0.075^\circ \approx 16\text{ km}\times 12\text{ km}$) to target downtown urban cores, preventing timeouts in massive metros like London, Toronto, Manchester, and Austin.
-- **Smart State & Region Detection**: Searching states/provinces (e.g. `Texas`, `Ontario`, `Bavaria`) detects the broad region and automatically targets its primary commercial center instead of an empty rural centroid.
-- **5 Global Overpass Mirrors**: Redundant failover between `overpass-api.de`, `kumi.systems`, `private.coffee`, `osm.ch`, and `nchc.org.tw`.
-- **Dual Fallbacks**: Seamless failover to **Nominatim Bounded Search** and **Photon Komoot OSM Geo-Search** (<300ms, proximity-filtered) so searches never return blank.
-- **High Volume Yield**: Returns **100–300+ leads** per search query.
-- **Google Places API (New)**: Optional location grid search for global commercial density.
+### 🗺️ Multi-Provider Discovery & Resilient Geocoding
+- **OpenStreetMap (Overpass 4-Quadrant Grid + Circuit Breaker):** Queries `node` and `way` elements across 4 city quadrants (`SW`, `SE`, `NW`, `NE`) with automatic failover across global Overpass mirrors. If mirrors are overloaded (`502`), a circuit breaker trips immediately and switches to the **5-Zone × Synonym Photon Multi-Grid** + **Nominatim Bounded Search** to break the 50-result cap and return **100–300+ businesses**.
+- **Serper.dev Google Maps (2,500 free):** Optional Google Maps Places discovery returning websites, phones, ratings, and review counts.
+- **Google Places API (New):** Optional grid search for global commercial coverage.
+- **Multi-Engine Web Search Failover:** Optional **Serper**, **Tavily** (1,000 free/mo), **Brave Search**, **Exa AI**, and self-hosted **SearXNG** support with automatic failover to rate-limited DuckDuckGo HTML, DDG Lite, and Bing.
+- **Smart State & Region Detection:** Searching broad states/provinces (e.g. `Texas`, `Ontario`, `Bavaria`) automatically targets their primary commercial hub instead of an empty rural centroid.
 
-### 🔍 Deep Multi-Tier Email & Contact Extraction
-- **Cloudflare Email De-obfuscation**: Decodes protected `data-cfemail` addresses automatically.
-- **JSON-LD Schema Extraction**: Parses `<script type="application/ld+json">` for embedded `LocalBusiness` contact details not listed in plaintext.
-- **Expanded Legal & Subpage Crawler**: Crawls high-priority subpages where registered contact emails are mandatory:
-  - `/contact`, `/contact-us`, `/about`, `/about-us`
-  - `/privacy`, `/privacy-policy`, `/gdpr` *(UK/EU registered contact & DPO emails)*
-  - `/impressum`, `/imprint`, `/terms`, `/legal`
-  - `/enquiries`, `/booking`, `/appointments`, `/team`
-- **Rate-Limited Multi-Engine Search**: Thread-locked search engine snippet hunting (DuckDuckGo, DDG Lite, Bing) preventing 403 bot blocks and capturing `@gmail.com`, phone numbers, and social links.
-- **High-Probability Domain Email Candidates**: For active custom domains hiding emails behind forms, derives category-appropriate addresses (`orders@{domain}` for bakeries, `bookings@{domain}` for salons, `info@{domain}`, `enquiries@{domain}`).
-- **URL-Encoding Artifact Protection**: Eliminates false positives from search engine query strings (`%22%40gmail.com`).
+### 🔍 Deep Email Hunting, MX Verification & Relevance Guards
+- **DNS-over-HTTPS MX Verification:** Every discovered email domain is checked against Google DNS / Cloudflare DNS (`MX` records) so nonexistent domains and dead mail servers are rejected before saving.
+- **Role-Based Email Prioritization:** Automatically ranks B2B role inboxes (`procurement@`, `info@`, `contact@`, `enquiries@`, `bookings@`, `orders@`, `appointments@`) ahead of personal addresses.
+- **Business Relevance & Duplicate Guards:** Search-snippet emails are strictly validated against business-name tokens and proximity; emails appearing across multiple unrelated businesses are automatically dropped as directory leaks.
+- **Confidence Badges & Anti-Bounce Hold:** Distinguishes `Verified ✓` scraped emails from `Inferred MX` domain guesses, holding inferred guesses from Auto-Email by default (`auto_send_inferred: false`).
+- **SSRF-Protected Deep Crawler:** Blocks private/loopback/cloud metadata IPs (`127.0.0.0/8`, `10.0.0.0/8`, `169.254.169.254`) at the DNS level while crawling homepages, `/contact`, `/about`, `/privacy`, `/terms`, `/impressum`, `/enquiries`, and `/booking` pages, plus JSON-LD schemas and Cloudflare `data-cfemail` attributes.
 
-### 🩺 Live Website Technical, SEO & Conversion Audit
-Automatically diagnoses 9 high-ticket operational and technical issues on working websites:
-1. **SSL & Security**: Detects insecure HTTP or expired SSL certificates.
-2. **Mobile Load Speed**: Flags slow load times (>2.8s) causing visitor abandonment.
-3. **Mobile Responsiveness**: Flags missing viewport tags.
-4. **24/7 Chat & WhatsApp**: Flags absence of instant messaging or AI reception widgets.
-5. **Online Booking System**: Flags missing 1-click booking/reservation systems for salons, clinics, restaurants, and gyms.
-6. **Local SEO Schema**: Checks for missing Google Maps `LocalBusiness` JSON-LD schema.
-7. **Meta Description**: Detects missing Google search snippet tags.
-8. **Retargeting Pixels**: Detects missing Meta (Facebook) and Google Tag Manager pixels.
-9. **Outdated Copyright**: Detects stale designs with outdated copyright years.
+### 🔬 Evidence-Based Research & Live Website Audits
+- **Verbatim Quote Extraction:** Extracts real operational sentences from crawled pages (e.g. `"call us to book"`, `"fill out the form"`, `"custom cakes"`) and verifies the exact quote exists verbatim before citing it in outreach.
+- **Tech Stack & Decision-Maker Detection:** Identifies `WordPress`, `Wix`, `Squarespace`, `Shopify`, `GoDaddy Builder`, `Webflow`, `Weebly`, and extracts owner/doctor/founder names (`Dr. ...`, JSON-LD `founder`).
+- **9-Point Technical & Conversion Audit:** Diagnoses SSL/HTTP errors, slow mobile load (>2.8s), missing mobile viewport, missing WhatsApp/AI chat widgets, missing online booking systems, missing `LocalBusiness` JSON-LD schema, missing meta descriptions, missing Meta/Google retargeting pixels, and outdated copyright years.
+- **Prompt-Injection Containment:** When using optional **Gemini 2.5 Flash** or **Groq Llama 3.3 70B** AI polish, scraped website text is sandboxed inside `<untrusted_page>` XML tags.
 
-### ✍️ Hyper-Tailored, Industry-Specific Outreach Pitches
-Every lead receives a custom, human-written cold email and social DM/WhatsApp pitch based on their category and live audit findings:
-- **Clinics, Doctors & Healthcare**: Focuses on after-hours patient drop-off, missed appointment calls, 24/7 WhatsApp emergency triage, and Google Maps Local 3-Pack SEO.
-- **Salons, Barbers & Spas**: Focuses on cutting out Instagram DM phone tag, 1-click booking calendars, and automated appointment reminders to prevent no-shows.
-- **Bakeries, Cafes & Restaurants**: Focuses on mobile lookbooks, visual menus, and 1-click WhatsApp custom cake and catering inquiries.
-- **Gyms & Fitness**: Focuses on free trial pass funnels and automated follow-up.
-- **Trades & Contractors**: Focuses on emergency click-to-call and instant quote triage.
-- **Live Audited Sites**: Dynamically quotes the **exact 2 audit issues** diagnosed on their live site with clear commercial impact.
-- **AI Outreach Mode**: Optional integration with **Gemini 2.5 Flash** or **Groq Llama 3.3 70B** for AI-generated writeups when an API key is configured.
+### 🛡️ Anti-Spam Safeguards, Two-Way IMAP Triage & Follow-Up CRM
+- **Deliverability & Sending Safeguards:**
+  - Plain-text conversational formatting (zero tracking pixels or spammy HTML) with spam-trigger phrase cleaning.
+  - Proper `Message-ID`, `Date`, `Reply-To`, and `List-Unsubscribe` headers + polite opt-out footer.
+  - Configurable **Send Delay** (default `8s`), **Daily Warmup Cap** (default `40/day`), and optional **Business-Hours Safeguard** (Mon–Fri, 08:00–17:00).
+- **Two-Way IMAP Auto-Triage (`CRM & Follow-Ups`):**
+  - Connects via `imaplib` (read-only) to detect **Human Replies** (stops follow-ups), **Out-of-Office** auto-replies (defers follow-up by 3 days), **Opt-Out / Unsubscribe** replies (permanently suppresses), and **Bounces / NDRs** (`mailer-daemon` permanent suppression).
+- **3-Stage Threaded Follow-Up Sequences:** Automatically schedules and sends `Re:` threaded Follow-Up 1 (Day 3) and Follow-Up 2 (Day 7) with `In-Reply-To` headers.
+- **Live Trace & Diagnostic Logs:** Real-time collapsible terminal panel streaming geocoding, Overpass/Photon counts, MX verification results, and SMTP/WhatsApp statuses.
 
-### ✉️ Autonomous SMTP Emailer & Single-Send Ledger
-- **Built-in SMTP Dispatch**: Supports Gmail App Passwords and custom SMTP relays.
-- **Single-Send Deduplication**: Persistent ledger (`data/sent_emails.json`) tracks sent emails to guarantee you never contact the same business twice.
-- **Auto-Email Mode**: Automatically emails qualified leads the moment they are discovered.
-- **Dry-Run Mode**: Simulates email dispatch for safe testing without contacting recipients.
-- **1-Click Outreach**: Pre-filled `mailto:` links, 1-click WhatsApp pitch launcher (`wa.me/`), and direct Instagram/Facebook DM links.
+### 💬 Optional WhatsApp Baileys Sidecar (Anti-Ban Architecture)
+- **Live `onWhatsApp()` Number Verification:** Checks discovered phone numbers against WhatsApp before messaging (`WA ✓` vs `No WA`), automatically filtering out landlines.
+- **Human Presence & Typing Simulation:** Simulates `available` presence, realistic `composing` ("typing...") duration scaled to message length, and `paused` state before dispatching.
+- **Anti-Ban Safeguards:** Enforces a strict daily warmup cap (default `15/day`), random jittered delays (`90–210s`), business-hours window (Mon–Fri 08:00–17:00), spintax phrasing variation, and single-send/reply suppression (`data/sent_whatsapp.json`).
+- **In-Browser QR Login & Reply Sync:** Scan QR codes directly inside the **WhatsApp Bot** modal and sync incoming replies/opt-outs automatically.
 
 ---
 
@@ -89,53 +75,33 @@ python server.py
 ```
 
 ### 3. Open your browser
-Visit:
+Visit `http://127.0.0.1:8000`.
+
+### 4. (Optional) Start the WhatsApp Baileys Sidecar
+Requires **Node.js**. To enable live `onWhatsApp` number verification and automated WhatsApp outreach:
+```bash
+cd wa_sidecar
+npm install
+node server.js
 ```
-http://localhost:8000
-```
+*(Or double-click `wa_sidecar\start_wa.bat` on Windows.)* Then click **WhatsApp Bot** in the dashboard header to scan your QR code using a secondary, warmed-up WhatsApp number.
 
 ---
 
 ## 📖 Usage Guide
 
-### Finding & Auditing Leads (Free)
-1. Select **OpenStreetMap (free, no key)** in the map provider dropdown.
-2. Enter a **City** (e.g., `Toronto`, `London`, `Manchester`, `Austin`, `Sheffield`).
-3. Enter a **Business type** (e.g., `bakery`, `clinic`, `salon`, `restaurant`, `plumber`, `gym`).
-4. Click **Find & Enrich Leads**. LeadFinder will query the map servers, run live site audits, hunt contact emails, and prepare tailored writeups.
+### Finding & Auditing Leads
+1. Select **OpenStreetMap (free, no key)** (or **Serper.dev Google Maps** / **Google Places** if you have an API key).
+2. Enter a **City** (e.g., `Toronto`, `London`, `Chicago`, `Miami`, `Austin`, `Manchester`).
+3. Enter a **Business type** (e.g., `bakery`, `clinic`, `salon`, `restaurant`, `dentist`, `plumber`, `gym`).
+4. Click **Find & Enrich Leads** and open **Live Trace & Diagnostic Logs** to monitor discovery and verification in real time.
 
-### Configuring Automated Outreach & SMTP
-1. Click the **Outreach & SMTP Settings** button in the top bar.
-2. Enter your sender profile: **Name**, **Company**, **Portfolio URL**, and optional custom pitch offer.
-3. Configure your mail server:
-   - **SMTP Host**: `smtp.gmail.com`
-   - **SMTP Port**: `465` (SSL)
-   - **SMTP Email**: Your email address
-   - **SMTP App Password**: Your 16-character [Google App Password](https://myaccount.google.com/apppasswords)
-4. (Optional) Toggle **Auto-Send Email** to dispatch emails automatically upon lead discovery, or enable **Dry-Run Mode** to test risk-free.
-5. (Optional) Add your **Gemini** or **Groq** API key for LLM-powered pitch customization.
-6. Click **Test SMTP Connection** to verify your setup.
-
----
-
-## 📊 CSV Export Format
-
-Exported CSVs provide complete lead intelligence ready for CRMs:
-- `name` - Business name
-- `category` - Industry / amenity type
-- `address` - Physical street address
-- `email` - Primary and secondary extracted emails
-- `phone` - Contact phone number
-- `website` - Target URL or social link
-- `site_status` - `no_website`, `social_only`, `broken`, `working`
-- `site_note` - Diagnostic summary (e.g., `Loads fine`, `DNS lookup failed`, `Domain parked`, `HTTP 404`)
-- `audit_issues` - Live audit findings (e.g. Slow Load, Missing Local Schema, No Booking System)
-- `lead_score` - Prioritization score (0–99) based on digital gap severity and contact availability
-- `rating` / `reviews` - Star rating and review count from map servers
-- `outreach_subject` - Tailored email subject line
-- `outreach_body` - Full tailored email pitch
-- `outreach_dm` - Short message formatted for WhatsApp or Instagram DMs
-- `maps_url` - Direct Google Maps link
+### Configuring Search, AI & Outreach Settings
+Click **Outreach & SMTP Settings** in the top bar (or configure via `.env`):
+- **Identity & Pitch Angle:** Name, company, portfolio URL, default pitch angle, or custom offer.
+- **SMTP & IMAP:** Gmail/Workspace email + [Google App Password](https://myaccount.google.com/apppasswords), `smtp.gmail.com:465`, `imap.gmail.com:993`.
+- **Safeguards & Follow-Ups:** Send delay, daily cap, business-hours guard, `List-Unsubscribe` toggle, and Follow-Up Day 1/Day 2 intervals.
+- **Optional Keys:** `SERPER_API_KEY`, `TAVILY_API_KEY`, `BRAVE_SEARCH_API_KEY`, `EXA_API_KEY`, `SEARXNG_URL`, `HUNTER_API_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY`.
 
 ---
 
@@ -144,33 +110,24 @@ Exported CSVs provide complete lead intelligence ready for CRMs:
 ```
 leadfinder/
 ├── static/
-│   ├── index.html       # Responsive dashboard with modal settings & Lucide SVG icons
-│   ├── style.css        # Modern dark/light themed responsive layout
-│   └── app.js           # Client-side state, polling, filtering, modal logic, & CSV export
-├── providers.py         # Resilient multi-tier map engine (Overpass, Nominatim, Photon, Google Places)
-├── outreach.py          # Email hunting, live site audit, SMTP mailer, & pitch generation
-├── server.py            # Async verification pipeline, job streaming API, & static server
+│   ├── index.html       # Dashboard, Live Trace Drawer, Pitch Modal, CRM Modal, & Settings
+│   ├── style.css        # Responsive design tokens & dark terminal log styles
+│   └── app.js           # Client state, live log streaming, CRM sync, & CSV export
+├── providers.py         # Multi-tier map discovery (4-Quad Overpass, Photon Grid, Nominatim, Serper, Google)
+├── outreach.py          # SSRF guard, DoH MX check, evidence extraction, SMTP safeguards & IMAP triage
+├── server.py            # Async enrichment pipeline, duplicate guard, & REST API
+├── wa_sidecar/
+│   ├── package.json     # Optional Baileys WhatsApp Web sidecar dependencies
+│   ├── server.js        # Local HTTP bridge for QR auth, onWhatsApp check, typing sim & replies
+│   └── start_wa.bat     # 1-click Windows launcher for WhatsApp sidecar
 ├── data/
-│   ├── geocache.json    # Local coordinate cache for zero-latency repeat searches
-│   ├── settings.json    # Persisted outreach & SMTP configuration
-│   └── sent_emails.json # Single-send deduplication ledger
-├── .gitignore           # Git ignore rules
-└── README.md            # Documentation
+│   ├── geocache.json    # Local coordinate cache
+│   ├── settings.json    # Persisted outreach, search & safeguard configuration
+│   ├── sent_emails.json # Persistent email CRM, suppression & follow-up ledger
+│   └── sent_whatsapp.json # Persistent WhatsApp single-send & reply ledger
+├── .gitignore
+└── README.md
 ```
-
----
-
-## 🤝 Contributing
-
-Contributions, issues, and feature requests are welcome!
-
-1. Fork the project (`https://github.com/frankdotdev/Leadfinder/fork`)
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
-
-If you found LeadFinder helpful, please give it a ⭐️ on GitHub!
 
 ---
 

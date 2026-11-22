@@ -1,0 +1,14 @@
+{
+  "name": "leadfinder-wa-sidecar",
+  "version": "1.0.0",
+  "description": "Optional Baileys WhatsApp Web sidecar for LeadFinder with human-like typing, onWhatsApp verification, and reply tracking.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "^6.7.9",
+    "pino": "^9.5.0",
+    "qrcode": "^1.5.4"
+  }
+}

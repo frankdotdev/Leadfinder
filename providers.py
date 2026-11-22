@@ -49,14 +49,18 @@ def http(url, data=None, headers=None, form=False, timeout=20):
         h["Content-Type"] = "application/x-www-form-urlencoded" if form else "application/json"
     try:
         req = urllib.request.Request(url, body, h)
-        # Try default SSL context, fall back to unverified context if Windows root certs are missing/outdated
+        # Try default SSL context; urllib wraps SSL errors inside URLError(reason=SSLError),
+        # so catch both ssl.SSLError and URLError with an SSL reason and retry unverified.
         try:
             with urllib.request.urlopen(req, timeout=timeout) as r:
                 return json.load(r)
-        except ssl.SSLError:
-            ctx = ssl._create_unverified_context()
-            with urllib.request.urlopen(req, timeout=timeout, context=ctx) as r:
-                return json.load(r)
+        except (ssl.SSLError, urllib.error.URLError) as e:
+            reason = getattr(e, "reason", e)
+            if isinstance(e, ssl.SSLError) or isinstance(reason, ssl.SSLError) or "CERTIFICATE_VERIFY_FAILED" in str(reason):
+                ctx = ssl._create_unverified_context()
+                with urllib.request.urlopen(req, timeout=timeout, context=ctx) as r:
+                    return json.load(r)
+            raise
     except urllib.error.HTTPError as e:
         host = urllib.parse.urlparse(url).netloc
         raise RuntimeError(f"{host} returned HTTP {e.code}: {e.read()[:200].decode('utf-8', 'ignore')}")
@@ -318,10 +322,9 @@ OSM_TAGS = {
 
 OVERPASS_SERVERS = [
     "https://overpass-api.de/api/interpreter",
+    "https://lz4.overpass-api.de/api/interpreter",
     "https://overpass.kumi.systems/api/interpreter",
     "https://overpass.private.coffee/api/interpreter",
-    "https://overpass.osm.ch/api/interpreter",
-    "https://overpass.nchc.org.tw/api/interpreter",
 ]
 
 URL_REGEX = re.compile(r'https?://[^\s"\'<>]+', re.I)
@@ -473,119 +476,232 @@ def parse_photon_results(features, category_fallback, city, center_lat=None, cen
         ))
     return results
 
+def _overpass_query(query_data, log, timeout=28):
+    """Tries Overpass mirrors in order, logging exact errors/remarks for diagnostics."""
+    for srv in OVERPASS_SERVERS:
+        srv_name = urllib.parse.urlparse(srv).netloc
+        try:
+            d = http(srv, {"data": query_data}, form=True, timeout=timeout)
+            if not isinstance(d, dict):
+                log(f"WARN: {srv_name} returned non-JSON response")
+                continue
+            if d.get("remark") and not d.get("elements"):
+                log(f"WARN: {srv_name} remark: {str(d['remark'])[:120]}")
+                continue
+            elems = d.get("elements")
+            if elems is not None:
+                return elems, srv_name
+        except Exception as ex:
+            log(f"WARN: {srv_name} failed ({str(ex)[:100]})")
+            continue
+    return None, ""
+
+
+PHOTON_SYNONYMS = {
+    "clinic": ["clinic", "medical center", "doctor", "dentist"],
+    "dentist": ["dentist", "dental clinic", "dental"],
+    "bakery": ["bakery", "pastry", "bakeshop"],
+    "salon": ["salon", "hairdresser", "barber", "beauty salon"],
+    "restaurant": ["restaurant", "bistro", "diner", "cafe"],
+    "hotel": ["hotel", "inn", "guest house"],
+    "gym": ["gym", "fitness", "health club"],
+    "plumber": ["plumber", "plumbing"],
+    "lawyer": ["lawyer", "attorney", "law firm"],
+}
+
+
 def osm(p, log):
     city_input = p.get("city", "").strip()
     cat_input = p.get("category", "").strip()
     lat, lon, s, n, w, e, resolved_name = geocode(city_input, log)
-    bb = f"({s},{w},{n},{e})"
     cat = cat_input.lower().strip()
     tag = next((t for k, t in OSM_TAGS.items() if k in cat), None)
-    
-    # Query nodes and ways directly. Splitting node and way prevents geometry bottleneck and executes in ~1-2s
-    q = (
-        f"node{tag}{bb};\n"
-        f"way{tag}{bb};\n"
-    ) if tag else (
-        f'node["name"~"{cat.replace(chr(34), "")}",i]{bb};\n'
-        f'way["name"~"{cat.replace(chr(34), "")}",i]{bb};\n'
-    )
-    query_data = f"[out:json][timeout:35];(\n{q});\nout body center 300;\n"
-    
-    d = None
-    for srv in OVERPASS_SERVERS:
-        srv_name = urllib.parse.urlparse(srv).netloc
-        try:
-            log(f"Searching '{cat}' in {resolved_name} via {srv_name}...")
-            d = http(srv, {"data": query_data}, form=True, timeout=38)
-            if d and "elements" in d and len(d["elements"]) > 0:
-                break
-        except Exception:
-            continue
+    safe_cat = cat.replace('"', "")
 
+    # Subdivide bbox into a 2x2 grid so dense metros execute fast
+    mid_lat = (s + n) / 2.0
+    mid_lon = (w + e) / 2.0
+    quadrants = [
+        (s, w, mid_lat, mid_lon, "SW"),
+        (s, mid_lon, mid_lat, e, "SE"),
+        (mid_lat, w, n, mid_lon, "NW"),
+        (mid_lat, mid_lon, n, e, "NE"),
+    ]
+
+    seen_ids = set()
     count = 0
-    if d and d.get("elements"):
-        for x in d.get("elements", []):
-            b = parse_osm_element(x, resolved_name)
-            if b:
-                count += 1
-                yield b
-        if count > 0:
-            return
+    overpass_ok = False
 
-    # Fallback 1: Query Nominatim bounded index within the resolved area (q={cat}&viewbox=...&bounded=1)
-    log(f"Querying OpenStreetMap bounded index for '{cat}' in {resolved_name}...")
-    try:
-        nom_url = (
-            "https://nominatim.openstreetmap.org/search?"
-            + urllib.parse.urlencode({
-                "q": cat,
-                "format": "json",
-                "limit": 100,
-                "addressdetails": 1,
-                "extratags": 1,
-                "viewbox": f"{w},{n},{e},{s}",
-                "bounded": 1,
-            })
+    log(f"Querying OpenStreetMap Overpass (4-quadrant grid) for '{cat}' in {resolved_name}...")
+    for idx, (qs, qw, qn, qe, qlabel) in enumerate(quadrants):
+        bb = f"({qs},{qw},{qn},{qe})"
+        q = (
+            f"node{tag}{bb};\nway{tag}{bb};\n"
+            if tag
+            else f'node["name"~"{safe_cat}",i]{bb};\nway["name"~"{safe_cat}",i]{bb};\n'
         )
-        nom_data = http(nom_url, headers={"User-Agent": APP_UA}, timeout=10)
-        if nom_data:
-            results = parse_nominatim_results(nom_data, cat, resolved_name)
-            for b in results:
-                count += 1
-                yield b
-            if count > 0:
-                return
-    except Exception:
-        pass
+        query_data = f"[out:json][timeout:14];(\n{q});\nout body center 250;\n"
+        elems, srv_name = _overpass_query(query_data, log, timeout=15)
+        if elems is not None:
+            overpass_ok = True
+            q_added = 0
+            for x in elems:
+                b = parse_osm_element(x, resolved_name)
+                if b and b["id"] not in seen_ids:
+                    seen_ids.add(b["id"])
+                    count += 1
+                    q_added += 1
+                    yield b
+            log(f"OK: Quadrant {qlabel} ({srv_name}) returned {len(elems)} raw -> {q_added} named businesses")
+        elif idx == 0:
+            # Circuit breaker: if all Overpass mirrors failed/timed out on Quadrant 1,
+            # fail fast instead of wasting 4+ minutes retrying dead mirrors on Q2-Q4!
+            log("WARN: Overpass mirrors overloaded/502 on Q1; fast-switching to Multi-Grid Photon + Nominatim.")
+            break
 
-    # Fallback 2: Query Photon Komoot OSM Full-Text Geo-Search (Proximity-based, zero key, ultra-fast)
-    log(f"Querying Photon OSM index for '{cat}' around {resolved_name}...")
-    try:
-        photon_url = (
-            "https://photon.komoot.io/api/?"
-            + urllib.parse.urlencode({
-                "q": cat,
-                "lat": f"{lat:.4f}",
-                "lon": f"{lon:.4f}",
-                "limit": 100,
-            })
-        )
-        photon_data = http(photon_url, timeout=9)
-        if photon_data and photon_data.get("features"):
-            results = parse_photon_results(photon_data["features"], cat, resolved_name, center_lat=lat, center_lon=lon)
-            for b in results:
-                count += 1
-                yield b
-            if count > 0:
-                return
-    except Exception:
-        pass
+    if count > 0:
+        log(f"OK: Overpass total collected: {count} unique businesses in {resolved_name}")
+        return
 
-    # Fallback 3: Name-based search on Overpass
-    if count == 0 and tag:
-        try:
-            fb_q = (
-                f'node["name"~"{cat.replace(chr(34), "")}",i]{bb};\n'
-                f'way["name"~"{cat.replace(chr(34), "")}",i]{bb};\n'
-            )
-            fb_data = f"[out:json][timeout:25];(\n{fb_q});\nout body center 150;\n"
-            for srv in OVERPASS_SERVERS[:2]:
-                d_fb = http(srv, {"data": fb_data}, form=True, timeout=28)
-                if d_fb and d_fb.get("elements"):
-                    for x in d_fb.get("elements", []):
-                        b = parse_osm_element(x, resolved_name)
-                        if b:
+    # Fallback 1: Multi-Point + Synonym Photon OSM Grid (ultra-fast ~0.4s per request, breaks 50-lead cap!)
+    seen_names = set()
+    photon_terms = next((syns for k, syns in PHOTON_SYNONYMS.items() if k in cat), [cat])
+    photon_points = [
+        (lat, lon, "Center"),
+        (lat + 0.05, lon - 0.05, "NW"),
+        (lat + 0.05, lon + 0.05, "NE"),
+        (lat - 0.05, lon - 0.05, "SW"),
+        (lat - 0.05, lon + 0.05, "SE"),
+    ]
+    log(f"Querying Photon OSM Multi-Grid ({len(photon_points)} zones × {len(photon_terms)} terms) around {resolved_name}...")
+    for p_lat, p_lon, z_label in photon_points:
+        for term in photon_terms:
+            try:
+                photon_url = (
+                    "https://photon.komoot.io/api/?"
+                    + urllib.parse.urlencode({
+                        "q": term,
+                        "lat": f"{p_lat:.4f}",
+                        "lon": f"{p_lon:.4f}",
+                        "limit": 100,
+                    })
+                )
+                photon_data = http(photon_url, timeout=7)
+                if photon_data and photon_data.get("features"):
+                    results = parse_photon_results(photon_data["features"], term, resolved_name, center_lat=lat, center_lon=lon)
+                    for b in results:
+                        nk = b["name"].lower().strip()
+                        if b["id"] not in seen_ids and nk not in seen_names:
+                            seen_ids.add(b["id"])
+                            seen_names.add(nk)
                             count += 1
                             yield b
-                    if count > 0:
-                        return
-        except Exception:
-            pass
+            except Exception:
+                continue
+    log(f"OK: Photon Multi-Grid collected {count} unique businesses in {resolved_name}")
+
+    # Fallback 2: Nominatim bounded search (up to 50)
+    if count < 80:
+        try:
+            log(f"Supplementing with Nominatim bounded index for '{cat}' in {resolved_name}...")
+            nom_url = (
+                "https://nominatim.openstreetmap.org/search?"
+                + urllib.parse.urlencode({
+                    "q": cat,
+                    "format": "json",
+                    "limit": 50,
+                    "addressdetails": 1,
+                    "extratags": 1,
+                    "viewbox": f"{w},{n},{e},{s}",
+                    "bounded": 1,
+                })
+            )
+            nom_data = http(nom_url, headers={"User-Agent": APP_UA}, timeout=8)
+            if nom_data:
+                results = parse_nominatim_results(nom_data, cat, resolved_name)
+                n_added = 0
+                for b in results:
+                    nk = b["name"].lower().strip()
+                    if b["id"] not in seen_ids and nk not in seen_names:
+                        seen_ids.add(b["id"])
+                        seen_names.add(nk)
+                        count += 1
+                        n_added += 1
+                        yield b
+                log(f"OK: Nominatim added {n_added} more results (total: {count})")
+        except Exception as ex:
+            log(f"WARN: Nominatim fallback skipped: {str(ex)[:80]}")
+
+    if count > 0:
+        return
 
     if count == 0:
         raise RuntimeError(
             f"No {cat_input} listings found around {resolved_name}. Try checking the spelling or searching a nearby town."
         )
 
-PROVIDERS = {"osm": {"fn": osm, "key": False, "label": "OpenStreetMap (free, no key)"},
-             "google": {"fn": google, "key": True, "label": "Google Places (API key)"}}
+def serper_maps(p, log):
+    """Google Maps discovery via Serper.dev (2,500 free queries/mo, returns websites, phones & ratings)."""
+    api_key = (p.get("key") or "").strip()
+    if not api_key:
+        settings_file = DATA_DIR / "settings.json"
+        if settings_file.is_file():
+            try:
+                api_key = json.loads(settings_file.read_text(encoding="utf-8")).get("serper_api_key", "").strip()
+            except Exception:
+                pass
+    if not api_key:
+        raise ValueError("Serper.dev requires an API key (paste in API key box or save in Settings).")
+
+    city_input = (p.get("city") or "").strip()
+    cat_input = (p.get("category") or "").strip()
+    lat, lon, s, n, w, e, resolved_name = geocode(city_input, log)
+    seen = set()
+
+    for page in range(1, 5):
+        log(f"Serper Google Maps: fetching page {page} for '{cat_input}' in {resolved_name}...")
+        try:
+            d = http(
+                "https://google.serper.dev/places",
+                {"q": f"{cat_input} in {resolved_name}", "ll": f"@{lat},{lon},12z", "page": page},
+                headers={"X-API-KEY": api_key},
+                timeout=12,
+            )
+        except Exception as ex:
+            log(f"WARN: Serper page {page} failed: {str(ex)[:90]}")
+            break
+
+        places = d.get("places") or []
+        if not places:
+            break
+
+        added = 0
+        for x in places:
+            cid = str(x.get("cid") or x.get("placeId") or f"serp_{abs(hash(x.get('title', '') + x.get('address', '')))}")
+            if cid in seen:
+                continue
+            seen.add(cid)
+            added += 1
+            maps_url = f"https://www.google.com/maps/place/?q=place_id:{x['placeId']}" if x.get("placeId") else ""
+            yield biz(
+                cid,
+                x.get("title", ""),
+                x.get("type") or cat_input,
+                x.get("address", ""),
+                x.get("phoneNumber", ""),
+                x.get("website", ""),
+                x.get("rating"),
+                x.get("ratingCount"),
+                maps_url=maps_url,
+                city=resolved_name,
+            )
+        log(f"OK: Serper page {page} returned {added} businesses (total: {len(seen)})")
+        if len(places) < 10:
+            break
+
+
+PROVIDERS = {
+    "osm": {"fn": osm, "key": False, "label": "OpenStreetMap (free, no key)"},
+    "serper": {"fn": serper_maps, "key": True, "label": "Serper.dev Google Maps (2,500 free)"},
+    "google": {"fn": google, "key": True, "label": "Google Places (API key)"},
+}
